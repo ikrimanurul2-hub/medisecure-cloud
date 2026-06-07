@@ -1,17 +1,11 @@
 const express = require("express");
-
 const {
   uploadMedicalDocument,
   getMyDocuments,
 } = require("../controllers/documentController");
 
-const {
-  authenticateToken,
-} = require("../middleware/authMiddleware");
-
-const {
-  uploadDocumentFile,
-} = require("../middleware/uploadMiddleware");
+const { authenticateToken } = require("../middleware/authMiddleware");
+const { uploadDocumentFile } = require("../middleware/uploadMiddleware");
 
 const router = express.Router();
 
@@ -22,10 +16,6 @@ router.post(
   uploadMedicalDocument
 );
 
-router.get(
-  "/me",
-  authenticateToken,
-  getMyDocuments
-);
+router.get("/me", authenticateToken, getMyDocuments);
 
 module.exports = router;

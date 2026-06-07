@@ -1,17 +1,39 @@
 const express = require("express");
 const { body } = require("express-validator");
+const rateLimit = require("express-rate-limit");
+const { createSecurityAlert } = require("../utils/auditLogger");
 
-const {
-  register,
-  login,
-  me,
-} = require("../controllers/authController");
+const { register, login, me } = require("../controllers/authController");
 
-const {
-  authenticateToken,
-} = require("../middleware/authMiddleware");
+const { authenticateToken } = require("../middleware/authMiddleware");
 
 const router = express.Router();
+
+const loginLimiter = rateLimit({
+  windowMs: Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MINUTES || 1) * 60 * 1000,
+  limit: Number(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS || 3),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: "error",
+    message: "Too many login attempts. Please try again later.",
+  },
+  handler: async (req, res) => {
+    console.log("LOGIN RATE LIMIT TRIGGERED");
+
+    await createSecurityAlert(req, {
+      alertType: "LOGIN_RATE_LIMIT_EXCEEDED",
+      severity: "High",
+      description:
+        "Login request rejected because too many login attempts were detected.",
+    });
+
+    return res.status(429).json({
+      status: "error",
+      message: "Too many login attempts. Please try again later.",
+    });
+  },
+});
 
 router.post(
   "/register",
@@ -52,6 +74,7 @@ router.post(
 
 router.post(
   "/login",
+  loginLimiter,
   [
     body("email")
       .trim()
@@ -60,9 +83,7 @@ router.post(
       .isEmail()
       .withMessage("Email format is invalid."),
 
-    body("password")
-      .notEmpty()
-      .withMessage("Password is required."),
+    body("password").notEmpty().withMessage("Password is required."),
   ],
   login
 );
