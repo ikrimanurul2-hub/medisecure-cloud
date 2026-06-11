@@ -1,0 +1,53 @@
+name: Deploy MediSecure Cloud to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build and Deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate project files
+        run: |
+          echo "Checking required files..."
+          test -f docker-compose.yml
+          test -f backend/Dockerfile
+          test -f frontend/Dockerfile
+          test -f database/schema.sql
+          echo "Required files found."
+
+      - name: Deploy to AWS EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "=== Go to project directory ==="
+            cd ${{ secrets.EC2_PROJECT_PATH }}
+
+            echo "=== Pull latest code from GitHub ==="
+            git pull origin main
+
+            echo "=== Validate Docker Compose configuration ==="
+            docker compose config > /tmp/medisecure-compose-check.txt
+
+            echo "=== Build updated containers ==="
+            docker compose build
+
+            echo "=== Restart application containers ==="
+            docker compose up -d
+
+            echo "=== Show running containers ==="
+            docker compose ps
+
+            echo "=== Deployment completed successfully ==="
