@@ -4,6 +4,11 @@
 
 Aplikasi ini memungkinkan pengguna untuk melakukan pencatatan data kesehatan, mengunggah dokumen medis, melihat dashboard kesehatan, serta mendapatkan analisis awal berbasis AI.
 
+Projek ini dibuat oleh :
+1. Ikrima Nurul Hikmah : 152023144
+2. Rida Rahmaniah El Sya'Bani : 152023176
+3. Sondang Anjelina Nadeak : 152023182
+
 ---
 
 ## 1. Deskripsi Project
