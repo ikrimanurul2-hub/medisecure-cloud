@@ -1,12 +1,15 @@
-const fs = require("fs/promises");
 const path = require("path");
-const crypto = require("crypto");
 
 const pool = require("../config/db");
 const {
   createActivityLog,
   createSecurityAlert,
 } = require("../utils/auditLogger");
+
+const {
+  uploadFileToSupabase,
+  createSignedUrl,
+} = require("../services/supabaseStorageService");
 
 const getAllowedFileTypes = () => {
   return (process.env.ALLOWED_FILE_TYPES || "application/pdf,image/png,image/jpeg")
@@ -48,6 +51,7 @@ const uploadMedicalDocument = async (req, res) => {
     const allowedExtensions = getAllowedExtensions();
 
     const originalFileName = file.originalname;
+    const safeOriginalName = sanitizeFileName(originalFileName);
     const extension = path.extname(originalFileName).replace(".", "").toLowerCase();
 
     const isMimeAllowed = allowedFileTypes.includes(file.mimetype);
@@ -67,17 +71,11 @@ const uploadMedicalDocument = async (req, res) => {
       });
     }
 
-    const safeOriginalName = sanitizeFileName(originalFileName);
-    const storedFileName = `${crypto.randomUUID()}-${safeOriginalName}`;
+    const uploadedFile = await uploadFileToSupabase(file, req.user.id);
 
-    const uploadDir = path.resolve(__dirname, "../../uploads/documents");
-    await fs.mkdir(uploadDir, { recursive: true });
-
-    const storedPath = path.join(uploadDir, storedFileName);
-    await fs.writeFile(storedPath, file.buffer);
-
-    const storageProvider = process.env.STORAGE_PROVIDER || "Local Secure Storage";
-    const storagePath = `local://uploads/documents/${storedFileName}`;
+    const storageProvider = process.env.STORAGE_PROVIDER || "Supabase Storage";
+    const storagePath = uploadedFile.storagePath;
+    const storedFileName = uploadedFile.storedFileName;
 
     const [result] = await pool.query(
       `INSERT INTO medical_documents
@@ -85,7 +83,7 @@ const uploadMedicalDocument = async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, 'uploaded')`,
       [
         req.user.id,
-        originalFileName,
+        safeOriginalName,
         storedFileName,
         file.mimetype,
         file.size,
@@ -97,16 +95,16 @@ const uploadMedicalDocument = async (req, res) => {
     await createActivityLog(req, {
       userId: req.user.id,
       activity: "UPLOAD_DOCUMENT",
-      description: `User uploaded medical document: ${originalFileName}`,
+      description: `User uploaded medical document to Supabase Storage: ${originalFileName}`,
       statusCode: 201,
     });
 
     return res.status(201).json({
       status: "success",
-      message: "Medical document uploaded successfully.",
+      message: "Medical document uploaded successfully to Supabase Storage.",
       data: {
         id: result.insertId,
-        original_file_name: originalFileName,
+        original_file_name: safeOriginalName,
         stored_file_name: storedFileName,
         file_type: file.mimetype,
         file_size: file.size,
@@ -127,6 +125,7 @@ const uploadMedicalDocument = async (req, res) => {
     return res.status(500).json({
       status: "error",
       message: "Internal server error during document upload.",
+      error: error.message,
     });
   }
 };
@@ -151,6 +150,17 @@ const getMyDocuments = async (req, res) => {
       [req.user.id]
     );
 
+    const documentsWithSignedUrl = await Promise.all(
+      documents.map(async (document) => {
+        const signedUrl = await createSignedUrl(document.storage_path);
+
+        return {
+          ...document,
+          signed_url: signedUrl,
+        };
+      })
+    );
+
     await createActivityLog(req, {
       userId: req.user.id,
       activity: "VIEW_MEDICAL_DOCUMENTS",
@@ -161,7 +171,7 @@ const getMyDocuments = async (req, res) => {
     return res.json({
       status: "success",
       message: "Medical documents retrieved successfully.",
-      data: documents,
+      data: documentsWithSignedUrl,
     });
   } catch (error) {
     console.error("Get documents error:", error.message);
@@ -169,6 +179,7 @@ const getMyDocuments = async (req, res) => {
     return res.status(500).json({
       status: "error",
       message: "Internal server error during get documents.",
+      error: error.message,
     });
   }
 };
